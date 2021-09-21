@@ -1,0 +1,566 @@
+# 一、安装docker
+
+```sh
+1、卸载docker
+yum list installed | grep docker 列出当前所有docker的包
+yum -y remove docker的包名称 卸载docker包
+rm -rf /var/lib/docker 删除docker的所有镜像和容器
+2、安装必要的软件包
+yum install -y yum-utils device-mapper-persistent-data lvm2
+3、配置下载的镜像仓库
+yum-config-manager --add-repo  https://download.docker.com/linux/centos/docker-ce.repo
+yum list docker-ce --showduplicates | sort –r 列出需要安装的版本列表
+4、安装指定的版本
+yum install docker-ce-18.06.1.ce
+5、启动docker
+systemctl start docker  启动docker
+systemctl enable docker 设置开机自启
+systemctl restart docker 重启docker
+6、添加阿里云镜像下载地址
+vi /etc/docker/daemon.json
+{
+"registry-mirrors": ["https://zydiol88.mirror.aliyuncs.com"]
+}
+```
+
+# 二、docker的基本操作命令
+
+```sh
+1、镜像命令
+镜像相当于应用的安装包，在docker部署的任何应用都需要先构建为镜像
+docker images     查看本地所有镜像
+docker search <镜像名称> 模糊查询镜像
+docker pull <镜像名称>   拉取镜像
+docker rmi -f <镜像ID> 删除镜像
+
+2、容器名称
+容器：容器由镜像创建而来，容器是Docker运行应用的载体，每个应用都分别运行在Docker的每个容器中。
+docker ps 只查看运行中的容器，已经停止的容器查看不到
+docker ps -a 查询所有的容器，运作中和已停止的容器
+docker run -i <镜像名称:标签> 运行容器（默认是前台运行）
+常用参数：
+-i: 前台方式运行
+-d: 后台方式运行（守护式）
+--name：给容器添加名称
+-p: 公开容器端口给当前宿主机
+-v: 挂载目录
+docker exec -it <容器ID> /bin/bash  进入容器内部
+docker start/stop/restart  <容器ID>  启动/停止/重启容器
+docker rm -f <容器ID>  强制删除容器
+docker logs -f <容器ID> 查看容器的启动日志
+docker inspect <容器ID> 查看容器的元信息
+eg: docker run -id -p 9000:80  nginx  启动Nginx容器，并将宿主机的9000端口暴露给Nginx的80端口使用
+
+```
+
+# 三、Dockerfile指令详解
+
+1、使用Dockerfile制作微服务镜像
+
+```shell
+(1)上传Eureka微服务jar包到Linux
+(2)编写Dockerfile文件
+	FROM openjdk:8-jdk-alpine
+	ARG JAR_FILE
+	COPY ${JAR_FILE} app.jar
+	EXPOSE 10086
+	ENTRYPOINT ["java","-jar","/app.jar"]
+(3)构建镜像
+    docker build --build-arg JAR_FILE=tensquare_eureka_server-1.0-SNAPSHOT.jar -t eureka:v1 .
+(4)查看镜像是否创建成功
+	docker images
+(5)创建容器
+	docker run -i --name=eureka -p 10086:10086 eureka:v1
+(6)访问容器
+
+```
+
+2、Dockerfile常见命令
+
+| 命令                                | 作用                                                         |
+| ----------------------------------- | ------------------------------------------------------------ |
+| FROM  <imageName:tag>               | 依赖的基础镜像                                               |
+| MAINTAINER <userName>               | 声明镜像的作者                                               |
+| ENV key value                       | 声明环境变量（可写多条）                                     |
+| RUN <command>                       | 编译时运行的脚本（可写多条）                                 |
+| CMD                                 | 设置容器的启动命令                                           |
+| ENTRYPOINT                          | 设置容器的入口程序                                           |
+| ADD source_dir/file   dest_dir/file | 将宿主机的文件复制到容器内，如果是一个压缩文件，将会在复制后自动解压 |
+| COPY source_dir/file dest_dir/file  | 和ADD相似，但是如果有压缩文件并不能解压                      |
+| WORKDIR  <pathDir>                  | 设置工作目录                                                 |
+| ARG                                 | 编译镜像时加入的参数                                         |
+| VOLUMN                              | 设置容器的挂载卷                                             |
+
+RUN 、CMD、ENTRYPOINT的区别
+
+RUN：用于指定 docker build 过程中要运行的命令，即是创建 Docker 镜像（image）的步骤。
+
+CMD：设置容器的启动命令， Dockerfile 中只能有一条 CMD 命令，如果写了多条则最后一条生效，
+CMD不支持接收docker run的参数。
+
+ENTRYPOINT：入口程序是容器启动时执行的程序， docker run 中最后的命令将作为参数传递给入口
+程序 ，ENTRYPOINY类似于 CMD 指令，但可以接收docker run的参数 。
+
+# 四、容器数据卷
+
+容器数据卷可以将容器内的数据挂载宿主机内，可以将数据持久化到宿主机，即使容器被删除。
+
+```sh
+1、-v 参数运行docker
+# 将容器中/root/zsq目录与宿主机中/root/zsq目进行挂载，并进行同步
+docker run -id -v /root/zsq:/root/zsq --name zsq centos
+# 查看运行容器的具体信息
+docekr inspect <容器ID>
+# 可以查看到如下信息：
+"Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/root/zsq",
+                "Destination": "/root/zsq",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            }
+        ]
+2、具名卷和匿名卷
+# 创建匿名卷
+docker run -id -v /root/test --name zsq1 centos
+# 查看卷的信息
+docker volume ls
+# DRIVER              VOLUME NAME
+# local               49408542e72b4545758b148db104b8e59d4162cbc5828562211e39a83cd567d6
+# inspect 名称查看的信息
+docekr inspect <容器ID> 
+"Mounts": [
+            {
+                "Type": "volume",
+                "Name": "49408542e72b4545758b148db104b8e59d4162cbc5828562211e39a83cd567d6",
+                "Source": "/var/lib/docker/volumes/49408542e72b4545758b148db104b8e59d4162cbc5828562211e39a83cd567d6/_data",
+                "Destination": "/root/test",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+# 创建具名卷 -v  卷名：容器内的路径
+docker run -id -v zsq:/root/zsq --name zsq01  centos
+# 查看卷信息
+docker volume ls
+# DRIVER              VOLUME NAME
+# local               49408542e72b4545758b148db104b8e59d4162cbc5828562211e39a83cd567d6
+docekr inspect <容器ID> 
+ "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "zsq",
+                "Source": "/var/lib/docker/volumes/zsq/_data",
+                "Destination": "/root/zsq",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+# 所有的docker容器内的卷，没有指定目录的情况下，都是在/var/lib/docker/volumes目录
+2、区分匿名挂载、具名挂载以及路径挂载        
+-v 容器内路径             # 匿名挂载
+-v 卷名:容器内路径         # 具名挂载
+-v /宿主机路径:容器内路径   # 路径挂载
+3、数据卷之Dockerfile
+    FROM centos
+	VOLUME ["vol1","vol2"]
+	CMD echo "-----"
+	CMD /bin/bash
+# 会在容器内定义两个匿名卷vol1,vol2
+```
+
+#   五、Docker网络
+
+```sh
+1、Linux 主机ping通内部docker容器
+安装docker时，就会有一个网卡docker0（桥接模式）；每启动一个docker容器，docker就会给docker容器分配一个IP。
+# 查看ip和网卡信息
+ip addr 
+虚拟机内：
+[root@localhost zsq]# ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 00:15:5d:ce:c6:0f brd ff:ff:ff:ff:ff:ff
+    inet 192.168.137.12/24 brd 192.168.137.255 scope global noprefixroute eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::a576:7324:b0fe:6ceb/64 scope link noprefixroute
+       valid_lft forever preferred_lft forever
+3: docker0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:dc:71:e5:8d brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:dcff:fe71:e58d/64 scope link
+       valid_lft forever preferred_lft forever
+37: veth9fc79e4@if36: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP group default
+    link/ether 6a:94:b3:26:00:b2 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::6894:b3ff:fe26:b2/64 scope link
+       valid_lft forever preferred_lft forever
+39: veth803d9a5@if38: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP group default
+    link/ether 36:ce:46:5e:73:36 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+    inet6 fe80::34ce:46ff:fe5e:7336/64 scope link
+       valid_lft forever preferred_lft forever
+容器内：
+[root@localhost zsq]# docker exec -it zsq1 ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+36: eth0@if37: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+通过发现：Linux内部和docker容器内部有成对出现的网络。
+# 37: veth9fc79e4@if36 与 36: eth0@if37
+故Linux和docker容器是可以ping通的，这种技术叫做evth-pair技术， 它充当一个桥梁，连接各种虚拟网络设备。
+
+网络模型图：
+   ------------------------------------------------------------------------
+   -   ---------------------------          ---------------------------   -    
+   -   -        docker1          -          -        docker2          -   -
+   -   -       172.17.0.2        -          -       172.17.0.3        -   -
+   -   --------evth-pair----------          --------evth-pair----------   -
+   -               ^                                    ^                 -
+   -               |                                    |                 -
+   -               |                                    |                 -
+   -               V                                    V                 -
+   -   --------evth-pair----------------------------evth-pair-----------  -
+   -   -                          172.17.0.1                           -  -
+   -   -                      安装docker时网卡docker                    -  -
+   -   -----------------------------------------------------------------  -
+   ------------------------------------------------------------------------
+2、docker容器之间的网络通信
+(1)通过IP访问
+[root@localhost zsq]# docker exec -it zsq1 ping 172.17.0.3
+PING 172.17.0.3 (172.17.0.3) 56(84) bytes of data.
+64 bytes from 172.17.0.3: icmp_seq=1 ttl=64 time=0.046 ms
+64 bytes from 172.17.0.3: icmp_seq=2 ttl=64 time=0.054 ms
+64 bytes from 172.17.0.3: icmp_seq=3 ttl=64 time=0.057 ms
+# 172.17.0.2 ping 172.17.0.3 == 172.17.0.2 => 172.17.0.1 => 172.17.0.3
+# 并非直连，而是通过172.17.0.1转发。
+3、通过容器名字访问
+[root@localhost zsq]# docker exec -it zsq2 ping zsq1
+ping: zsq1: Name or service not known
+# 不能访问
+查看网络信息：docker network ls
+[root@localhost zsq]# docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+910c6af01c03        bridge              bridge              local
+f3d806efe8eb        host                host                local
+10b1b3187482        none                null                local
+# 910c6af01c03 默认的网络，桥接模式，就是docker0
+查看网络的详细信息：docker network inspect <网络ID>
+[root@localhost zsq]# docker network inspect 910c6a
+[
+    {
+        "Name": "bridge",
+        "Id": "910c6af01c03924ffd8bf6f18134774247e7155a47665d15a8c3fc7671101d1e",
+        "Created": "2021-06-13T15:06:47.242070154+08:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": null,
+            "Config": [
+                {
+                    "Subnet": "172.17.0.0/16",
+                    "Gateway": "172.17.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {
+            "e7b80e2d6bf7dbd44921b3744b1d691ee94a80a3a9387a83673fe84690332360": {
+                "Name": "zsq1",
+                "EndpointID": "bc7c9f68fc518921546a830138f6ff01397e15258a8967c762a5c29e4fc60fba",
+                "MacAddress": "02:42:ac:11:00:02",
+                "IPv4Address": "172.17.0.2/16",
+                "IPv6Address": ""
+            },
+            "f06ce857901327d319789d3204a6fe10ea5f438d6b4db2de51452de9744e3f94": {
+                "Name": "zsq2",
+                "EndpointID": "5eb7a4ac93ae376982de8f52167710e9fab00017be3f3b0c6089152798c5a295",
+                "MacAddress": "02:42:ac:11:00:03",
+                "IPv4Address": "172.17.0.3/16",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {
+            "com.docker.network.bridge.default_bridge": "true",
+            "com.docker.network.bridge.enable_icc": "true",
+            "com.docker.network.bridge.enable_ip_masquerade": "true",
+            "com.docker.network.bridge.host_binding_ipv4": "0.0.0.0",
+            "com.docker.network.bridge.name": "docker0",
+            "com.docker.network.driver.mtu": "1500"
+        },
+        "Labels": {}
+    }
+]
+由于docker0是默认的网络，有很多限制和局限性，如：不能通过容器名（域名）进行网络通信;故需要自定义网络来通信。
+3、自定义网络
+(1) 查看所有的docker网络
+docker network ls
+网络模式：
+bridge: 桥接模式（默认）
+none: 不配置网络
+host: 和宿主机共享网络
+container: 容器网络连通（局限很大，用的少）
+(2) 创建网络
+docekr network create <option> <params>
+--driver  网络的驱动
+--subnet  子网的范围
+--gateway 主网的IP
+[root@localhost zsq]# docker network create --driver bridge --subnet 198.137.0.0/16 --gateway 198.137.0.1 mynet
+86b72e88006b21d337697c58e958f8a65232db3c690b7c74c2e6bf5cf67de0db
+
+[root@localhost zsq]# docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+910c6af01c03        bridge              bridge              local
+f3d806efe8eb        host                host                local
+86b72e88006b        mynet               bridge              local
+10b1b3187482        none                null                local
+(3)将docekr容器加入到自定义网
+[root@localhost zsq]# docker run -id --name zsq1 --network mynet centos
+3abc307b6be9da40863568eb1abc29ef5b0d8320d68f7a44d55dabc7350d3d9c
+查看docker zsq1的网络信息
+[root@localhost ~]# docker inspect zsq1
+"NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "9e2c78253285c9a2024cce7b05704db86611066e6c5c45f78da9df8c8befe657",
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "Ports": {},
+            "SandboxKey": "/var/run/docker/netns/9e2c78253285",
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "mynet": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": [
+                        "3abc307b6be9"
+                    ],
+                    "NetworkID": "86b72e88006b21d337697c58e958f8a65232db3c690b7c74c2e6bf5cf67de0db",
+                    "EndpointID": "5bf0e42af79e7089c2a5e4122aead576ece4b6801c06496d4271e7da22aea201",
+                    "Gateway": "198.137.0.1",
+                    "IPAddress": "198.137.0.2",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "MacAddress": "02:42:c6:89:00:02",
+                    "DriverOpts": null
+                }
+            }
+        }  "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "9e2c78253285c9a2024cce7b05704db86611066e6c5c45f78da9df8c8befe657",
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "Ports": {},
+            "SandboxKey": "/var/run/docker/netns/9e2c78253285",
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "mynet": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": [
+                        "3abc307b6be9"
+                    ],
+                    "NetworkID": "86b72e88006b21d337697c58e958f8a65232db3c690b7c74c2e6bf5cf67de0db",
+                    "EndpointID": "5bf0e42af79e7089c2a5e4122aead576ece4b6801c06496d4271e7da22aea201",
+                    "Gateway": "198.137.0.1",
+                    "IPAddress": "198.137.0.2",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "MacAddress": "02:42:c6:89:00:02",
+                    "DriverOpts": null
+                }
+            }
+        }
+# 查看 docker 容器内的hosts文件        
+[root@localhost etc]# docker exec -it zsq1 cat /etc/hosts
+127.0.0.1       localhost
+::1     localhost ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+198.137.0.2     3abc307b6be9
+原理：
+通过对比发现： 198.137.0.2     3abc307b6be9  
+3abc307b6be9 则为docker容器ID，即zsq1,故可以通过容器名进行网络访问。
+
+# 新建另外一docker容器
+[root@localhost ~]# docker run -id --name zsq2 --network mynet centos
+# 相互访问
+[root@localhost ~]# docker exec -it zsq1 ping zsq2
+PING zsq2 (198.137.0.3) 56(84) bytes of data.
+64 bytes from zsq2.mynet (198.137.0.3): icmp_seq=1 ttl=64 time=0.107 ms
+64 bytes from zsq2.mynet (198.137.0.3): icmp_seq=2 ttl=64 time=0.041 ms
+64 bytes from zsq2.mynet (198.137.0.3): icmp_seq=3 ttl=64 time=0.045 ms
+[root@localhost ~]# docker exec -it zsq2 ping zsq1
+PING zsq1 (198.137.0.2) 56(84) bytes of data.
+64 bytes from zsq1.mynet (198.137.0.2): icmp_seq=1 ttl=64 time=0.032 ms
+64 bytes from zsq1.mynet (198.137.0.2): icmp_seq=2 ttl=64 time=0.099 ms
+64 bytes from zsq1.mynet (198.137.0.2): icmp_seq=3 ttl=64 time=0.103 ms
+64 bytes from zsq1.mynet (198.137.0.2): icmp_seq=4 ttl=64 time=0.099 ms
+
+4、网络连通
+---------------------------------------------------------------------------------------
+---------------------------------                  ------------------------------------
+-   ----------      ----------  -                  -  -----------      -------------  -
+-   - mysql1 -      - mysql2 -  -                  -  -  redis1 -      -  redis2 - -  -
+-   -   0.2  -      -   0.3  -  -                  -  -   0.2   -      -   0.3   - -  -
+-   ----------      ----------  -                  -  -----------      -------------  -
+-             mynet1            -                  -             mynet2               -   
+-           172.17.0.1          -                  -           192.172.0.1            -
+---------------------------------                  ------------------------------------
+
+---------------------------------------------------------------------------------------
+以上存在两个网络mynet1 和 mynet2。
+mynet1 里面启动了两个容器：mysql1、mysql2
+mynet2 里面启动了两个容器：redis1、redis2
+docekr中mynet1与mynet2不能通信，因为不属于同一网段。
+mysql1 如何与 redis1 通信 ====> 将容器mysql1加入到mynet2网络 
+redis1 如何与 mysql1 通信 ====> 将容器redis1加入到mynet1网络 
+(1)将容器连接到其他网络
+$ docker network connect [OPTIONS] NETWORK CONTAINER
+[root@localhost ~]# docker network connect mynet redis1
+[root@localhost ~]# docker network inspect mynet
+[
+    {
+        "Name": "mynet",
+        "Id": "86b72e88006b21d337697c58e958f8a65232db3c690b7c74c2e6bf5cf67de0db",
+        "Created": "2021-06-18T23:46:11.399369367+08:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": {},
+            "Config": [
+                {
+                    "Subnet": "198.137.0.0/16",
+                    "Gateway": "198.137.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {
+            "17d04f7d8837697da14b6afe71140751bceca64079fbe0d07e1753c7b29e61c8": {
+                "Name": "redis1",
+                "EndpointID": "b064fabb71c23dc36bbbf05fedda33f7af3838ac0dca30fe9e11a230c1a67b51",
+                "MacAddress": "02:42:c6:89:00:04",
+                "IPv4Address": "198.137.0.4/16",
+                "IPv6Address": ""
+            },
+            "2147549a0d028a40f79b9cedacf02397fcabb0696f09af3868ab87eaac2388b6": {
+                "Name": "mysql1",
+                "EndpointID": "b2118692dae208a23a2bcc7afe7b60f1ed1966a33961f81bda55cbfada6f4f72",
+                "MacAddress": "02:42:c6:89:00:02",
+                "IPv4Address": "198.137.0.2/16",
+                "IPv6Address": ""
+            },
+            "7dc0d1cae238a484ca481d3502462c5f1843a00dea4262bedda6c6d67d7c15e5": {
+                "Name": "mysql2",
+                "EndpointID": "a97b115d41cf2c8b1b3fa2381a47ab5c605501107c39b9672c1f539322adade9",
+                "MacAddress": "02:42:c6:89:00:03",
+                "IPv4Address": "198.137.0.3/16",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {},
+        "Labels": {}
+    }
+]
+通过查看mynet网络信息，得出 redis1 加入到mynet网络中，IP：198.137.0.4。
+
+# 同时查看容器redis1的网络信息，发现redis1 同时归属两个网络：mynet 和 mynet1。
+[root@localhost ~]# docker inspect redis1
+"Networks": {
+                "mynet": {
+                    "IPAMConfig": {},
+                    "Links": null,
+                    "Aliases": [
+                        "17d04f7d8837"
+                    ],
+                    "NetworkID": "86b72e88006b21d337697c58e958f8a65232db3c690b7c74c2e6bf5cf67de0db",
+                    "EndpointID": "b064fabb71c23dc36bbbf05fedda33f7af3838ac0dca30fe9e11a230c1a67b51",
+                    "Gateway": "198.137.0.1",
+                    "IPAddress": "198.137.0.4",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "MacAddress": "02:42:c6:89:00:04",
+                    "DriverOpts": null
+                },
+                "mynet1": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": [
+                        "17d04f7d8837"
+                    ],
+                    "NetworkID": "e1a86b0cf74926704d7ad1bea89023b21089456cf8ed74e04deaf714856a24bd",
+                    "EndpointID": "ec8873c4bdcd6b40404d6a8cf84e3e3bad53ffc514b0426aec94cd774198225e",
+                    "Gateway": "192.176.0.1",
+                    "IPAddress": "192.176.0.2",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "MacAddress": "02:42:c0:b0:00:02",
+                    "DriverOpts": null
+                }
+            }
+
+总结：属于不同网络的容器，是不能进行通信。因此可以将容器加入到其他网络中，便可以与其他网络中的容器进行通信。一个容器可以加入到多个不同的网络中。
+
+
+```
+
