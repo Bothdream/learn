@@ -127,3 +127,74 @@ USING语法简化JOIN ON --- using(id) 等价于 on a.id=b.id
 
 
 
+四、SQL脚本
+1.修改列
+ALTER TABLE t_account modify `lastLoginTime` timestamp NULL COMMENT '登录时间';
+
+2.添加列
+ALTER TABLE t_policy add column lableName varchar(64) not null comment '标签名';
+
+3.删除列
+ALTER TABLE t_role DROP COLUMN idPath;
+
+4.添加唯一性约束-单列
+ALTER TABLE t_domain ADD unique(`name`);
+
+5.添加唯一性约束-多列(domainId,name)
+ALTER TABLE t_project ADD unique(`domainId`,`name`);
+
+6.分组连接group_concat
+select
+    ra.userId,
+    ra.projectId,
+    group_concat(ra.roleId) as roleIds,
+    group_concat(ra.id) as ids
+from
+    (select tra.roleId,
+            tra.projectId,
+            tra.id,
+            tra.userId,
+            tra.type
+     from
+            t_role_assignment tra,
+            t_role r where r.id=tra.roleId
+     ) ra group by ra.userId, ra.projectId
+注意：执行以后，roleIds和ids是多个值拼接的结果，中间以","隔开。
+
+7.分组排序取第一个值 group_concat、SUBSTRING_INDEX
+select
+    ra.userId,
+    ra.projectId,
+    SUBSTRING_INDEX(group_concat(ra.roleId order by roleId asc ),',',1) as roleId
+ from 
+    t_role_assignment ra 
+ group by ra.userId, ra.projectId;
+注意：SUBSTRING_INDEX函数是获取子串
+	
+8.MySQL实现多字段拼接模糊查询
+select name,info from Table1 where concat('name','info') like '%xxx%';  
+注意：  
+    模糊查询name字段或者info字段
+	
+9.mysql创建用户并授权
+(1).mysql
+(2).CREATE USER 'test'@'%' IDENTIFIED BY '123456';
+(3).GRANT ALL PRIVILEGES ON *.* TO "test"@"%" IDENTIFIED BY "123456" WITH GRANT OPTION;
+(4).FLUSH PRIVILEGES;
+
+10.创建存储过程
+
+DROP PROCEDURE test_fi     -- 删除存储过程
+CREATE PROCEDURE test_fi() -- 新建存储过程，相当于定义一个函数
+BEGIN
+	declare  num int  default 53002;  -- 声明一个整型的变量，并设置默认值   
+	while num<60000 DO          
+		  UPDATE t_risk_order tr SET tr.taskName = '待流转' WHERE tr.id = num;   -- 循环执行SQL语句
+		  SET num=num+1;
+	END WHILE; 
+END 
+
+CALL test_fi();             -- 单独执行存储过程
+11.查看慢SQL步骤
+(1).show processlist 或 show full processlist
+(2).找出慢SQL，然后explain

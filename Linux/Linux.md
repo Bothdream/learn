@@ -153,7 +153,53 @@ scp -v -p -r -C ./abc root@192.168.137.12:~/
 
 (2)rsync
 
+用法：
 
+A. **rsync [OPTION]... SRC [SRC]... DEST**      
+
+本地将多个文件同步到本地目的目录
+
+```
+rsync -v ts.sh nginx.conf ./tmp/
+```
+
+B. **rsync [OPTION]... SRC [SRC]... [USER@]HOST:DEST**
+
+推模式：将本地多个文件同步推到远程主机目的目录
+
+```
+rsync -v ts.sh nginx.conf root@192.168.137.13:~/tmp/
+```
+
+C.**rsync [OPTION]... [USER@]HOST:SRC [DEST]**
+
+拉模式：将远程源文件拉到本地
+
+```
+rsync -avzt root@192.168.137.13:~/lsf ./zsq/
+```
+
+注意：
+
+ **源路径如果是一个目录的话：**
+
+**a.不带尾随斜线表示的是整个目录包括目录本身，**
+
+**b.带上尾随斜线表示的是目录中的文件，不包括目录本身。** 
+
+D.常用参数
+
+-v  显示rsync过程中的详细信息
+
+-P 显示文件传输的进度信息
+
+-a 归档模式，表示递归传输并保持文件属性，等同于 “-rtopgDl”
+
+-z 传输时进行压缩提高效率
+
+-e 指定所使用的远程shell程序，默认为shell
+
+**最常用选项组合是“-avz”，即压缩和显示部分信息，并以归档模式传输。**
 
 (3)scp与rsync的区别
 
