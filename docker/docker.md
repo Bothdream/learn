@@ -45,12 +45,28 @@ docker run -i <镜像名称:标签> 运行容器（默认是前台运行）
 -p: 公开容器端口给当前宿主机
 -v: 挂载目录
 docker exec -it <容器ID> /bin/bash  进入容器内部
+docker exec -it <容器ID> /bin/sh  进入容器内部
 docker start/stop/restart  <容器ID>  启动/停止/重启容器
 docker rm -f <容器ID>  强制删除容器
 docker logs -f <容器ID> 查看容器的启动日志
 docker inspect <容器ID> 查看容器的元信息
 eg: docker run -id -p 9000:80  nginx  启动Nginx容器，并将宿主机的9000端口暴露给Nginx的80端口使用
-
+3.Docker load 命令
+导入docker镜像的命令，常用于从本地压缩包中导入docker镜像。
+docker load -i my-eureka.tar
+4.docker save 命令
+将制定镜像保存成归档文件(.tar或.tar.gz)
+[root@localhost ~]# docker images
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+eureka              v1                  840c79acf930        8 months ago        149MB
+openjdk             8-jdk-alpine        a3562aa0b991        2 years ago         105MB
+[root@localhost ~]#docker save -o my-eureka.tar 840c79acf930
+注意：
+(1)另外还可以使用export和import命令
+export和import导出的是容器的快照, 不是镜像本身, 也就是说没有layer。dockerfile里的workdir, entrypoint之类的所有东西都会丢失，commit过的话也会丢失。快照文件将丢弃所有的历史记录和元数据信息（即仅保存容器当时的快照状态），而镜像存储文件将保存完整记录，体积也更大。
+(2)docker save 保存的是镜像(image)，docker export 保存的是容器(container)
+(3)docker load 用来载入镜像包，docker import 用来载入容器包，但两者都会恢复为镜像
+(4)docker load 不能对载入的镜像重命名，而 docker import可以为镜像指定新名称。
 ```
 
 # 三、Dockerfile指令详解
@@ -564,3 +580,126 @@ $ docker network connect [OPTIONS] NETWORK CONTAINER
 
 ```
 
+# 六、附录
+
+**Docker 命令大全**
+
+## 容器生命周期管理
+
+- run
+
+  创建一个容器并运行一个命令
+
+- start/stop/restart
+
+  对一个或多个容器进行启动/停止/重启
+
+- kill
+
+  杀掉一个运行中的容器
+
+- rm
+
+  删除一个或多个容器
+
+- create
+
+  创建一个新的容器但不启动它
+
+- exec
+
+  在运行的容器中执行命令
+
+## 容器操作
+
+- ps
+
+  列出容器
+
+- inspect
+
+   获取容器/镜像的元数据
+
+- logs
+
+    获取容器的日志 
+
+- port
+
+   列出指定的容器的端口映射，或者查找将PRIVATE_PORT NAT到面向公众的端口 
+
+- top
+
+   查看容器中运行的进程信息，支持 ps 命令参数
+
+## 容器rootfs命令
+
+- commit
+
+   从容器创建一个新的镜像
+
+- cp
+
+   用于容器与主机之间的数据拷贝 
+
+- diff
+
+   检查容器里文件结构的更改 
+
+## 镜像仓库
+
+- login/logout
+
+   登陆/登出一个Docker镜像仓库 
+
+- pull
+
+   从镜像仓库中拉取或者更新指定镜像
+
+- push
+
+   将本地的镜像上传到镜像仓库,要先登陆到镜像仓库
+
+- search
+
+   从Docker Hub查找镜像
+
+## 本地镜像管理
+
+- images
+
+   列出本地镜像
+
+- rmi
+
+   删除本地一个或多个镜像
+
+- tag
+
+   标记本地镜像，将其归入某一仓库
+
+- build
+
+   用于使用 Dockerfile 创建镜像
+
+- history
+
+   查看指定镜像的创建历史
+
+- save
+
+   将指定镜像保存成 tar 归档文件
+
+- load
+
+   导入使用 [docker save]命令导出的镜像
+
+## 版本信息
+
+- info
+
+   显示 Docker 系统信息，包括镜像和容器数
+
+- version
+
+   显示 Docker 版本信息
