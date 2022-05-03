@@ -334,10 +334,14 @@ f3d806efe8eb        host                host                local
 (1) 查看所有的docker网络
 docker network ls
 网络模式：
-bridge: 桥接模式（默认）
-none: 不配置网络
-host: 和宿主机共享网络
-container: 容器网络连通（局限很大，用的少）
+bridge: 桥接模式（默认），如果未指定驱动程序，则使用此网络类型。当应用程序在需要通信的独立容器中运行时，通常会使用桥接网络。
+
+none: 不配置网络，通常与自定义网络驱动程序一起使用。 none不适用于swarm服务。
+
+host: 和宿主机共享网络，对于独立容器，容器和Docker主机之间的网络不需要隔离，直接使用主机的网络。
+
+overlay: 覆盖网络将多个Docker后台程序连接在一起，并使swarn服务能够相互通信。还可以使用覆盖网络来促进swarn服务和独立容器之间的通信，或者在不同Docker后台程序上的两个独立容器之间进行通信。
+
 (2) 创建网络
 docekr network create <option> <params>
 --driver  网络的驱动
@@ -576,9 +580,196 @@ $ docker network connect [OPTIONS] NETWORK CONTAINER
             }
 
 总结：属于不同网络的容器，是不能进行通信。因此可以将容器加入到其他网络中，便可以与其他网络中的容器进行通信。一个容器可以加入到多个不同的网络中。
+```
 
+## 1、 bridge 
+
+​		在网络术语中，桥接网络(bridge network)是在网络段之间转发流量的链路层设备。网桥(bridge)是可以硬件设备或在主机内核中运行的软件设备。
+
+​		在Docker术语中，桥接网络使用软件桥接，允许连接到同一桥接网络的容器进行通信，同时提供与未连接到该桥接网络的容器的隔离。Docker桥接驱动程序自动在主机中安装规则，以便不同桥接网络上的容器无法直接相互通信。**桥接网络适用于在同一个Docker后台程序主机上运行的容器。**
+
+**用户定义的桥接网络和默认桥接网络的区别**
+
+(1)用户定义的桥接网络可在容器化应用程序之间提供更好的隔离和互操作性
+
+(2)用户定义的桥接网络在容器之间提供自动DNS解析
+
+(3)容器可以在运行中与用户定义的网络连接和分离
+
+(4)每个用户定义的网络都会创建一个可配置的网桥
+
+(5)默认桥接网络上链接的容器共享环境变量
+
+```shell
+# 列出所有的网络
+docker network ls
+# 创建一个自定义的网桥网络，--driver bridge 默认是bridge，可以不写这个选项
+docker network create --driver bridge mynet
+# 创建一个容器，并加入到mynet网络
+docker run -dit --name nginx --network mynet nginx
+#查看网络的详细信息(连接了那些容器) 
+docker network inspect mynet
+#docker run命令期间只能连接到一个网络,可以将connect将容器连接到其他网络
+docker network connect mynet mysql
+# 断开容器与用户定义的桥接网络
+docker network disconnect mynet nginx
+# 查看容器的详细信息
+docker inspect nginx
+注意：
+Failed to Setup IP tables: Unable to enable SKIP DNAT rule
+报这个是因为关闭防火墙，未重启docker。
+```
+
+## 2、host
+
+​		 独立容器联网，这些容器直接绑定到Docker主机的网络，没有网络隔离。  主机模式网络对于优化性能以及在容器需要处理大量端口的情况下很有用，因为它不需要网络地址转换（NAT），并且不会为每个端口创建“userland-proxy”。
+
+​		启动一个直接绑定到Docker主机上端口80的`nginx`容器。 从网络的角度来看，这与nginx进程是直接在Docker主机而不是在容器中运行的隔离级别相同。 然而，从其他方面看，例如存储，进程命名空间和用户命名空间，`nginx`进程与主机是隔离的。 
+
+```shell
+#首先查看网络接口
+ip addr
+______________________________________________________________________________________
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 00:15:5d:ce:c6:10 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.137.13/24 brd 192.168.137.255 scope global noprefixroute eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::3542:be30:9896:abdc/64 scope link noprefixroute
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    link/ether 02:42:e6:b1:5a:bc brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+# 创建一个host网络
+docker run -dit --network host --name nginx_main nginx
+# 验证查看网络接口，发现并没有创建新的接口
+ip addr
+______________________________________________________________________________________
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 00:15:5d:ce:c6:10 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.137.13/24 brd 192.168.137.255 scope global noprefixroute eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::3542:be30:9896:abdc/64 scope link noprefixroute
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    link/ether 02:42:e6:b1:5a:bc brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+
+# 验证Docker主机和容器占用80端口的进程ID
+netstat -tulpn | grep :80
+________________________________________________________________________________________
+tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      1893/nginx: master
+tcp6       0      0 :::80                   :::*                    LISTEN      1893/nginx: master
+```
+
+## 3、overlay 
+
+当初始化swarm或将Docker主机加入现有swarm时，会在该Docker主机上创建两个新网络：
+
+a.称为`ingress`的覆盖网络，用于处理与swarm服务相关的控制和数据通信。**创建swarm服务并且不将其连接到用户定义的覆盖网络时，默认情况下它会连接到`ingress`网络。**
+
+b.一个名为`docker_gwbridge`的桥接网络，它将各个Docker后台程序连接到参与swarm的其他后台程序。
+
+创建覆盖网络的前提条件：
+
+需要打开以下端口，这些端口用于在覆盖网络上与每个参与的Docker主机的通信：
+
+**用于集群管理通信的TCP端口2377**
+
+**TCP和UDP端口7946用于节点之间的通信**
+
+**UDP端口4789用于覆盖网络通信**
+
+创建用于swarm服务的覆盖网络的命令：
+
+```shell
+ docker network create -d overlay my-overlay
+```
+
+创建可由swarm服务或独立容器用于与在其他Docker后台程序上运行的其他独立容器通信的覆盖网络的命令：
+
+```shell
+docker network create -d overlay --attachable my-attachable-overlay
+```
+
+(1) 在初始化或加入群集时Docker自动为您设置的默认覆盖网络 , **该网络不是生产系统的最佳选择**。 
 
 ```
+docker swarm leave --force
+docker swarm init --advertise-addr=<IP-ADDRESS-OF-MANAGER>
+docker swarm join --token <TOKEN> --advertise-addr <IP-ADDRESS-OF-WORKER-1> <IP-ADDRESS-OF-MANAGER>:2377
+docker node ls
+docker network ls
+docker service create --name nginx --publish target=80,published=80 --replicas=2 nginx
+```
+
+(2)使用用户定义的覆盖网络来连接服务。建议将其用于生产中运行的服务。
+
+```shell
+docker network create --driver=overlay --attachable my-overlay
+docker service create --name nginx --network my-overlay   --replicas 2   --publish published=80,target=80 nginx
+```
+
+(3覆盖网络可用于独立容器，在不同Docker后台程序上的独立容器之间建立关联。
+
+```shell
+docker network create --driver=overlay --attachable test-net
+# 在主机1上运行
+docker run -dit --name nginx --network test-net nginx
+# 在主机2上运行
+docker run -dit --name nginx1 --network test-net nginx
+docker network ls
+```
+
+(4)容器与swarm群集服务之间的通信，使用覆盖网络在独立容器与swarm群集服务之间建立通信。
+
+## 4、none
+
+ 如果要完全禁用容器上的网络堆栈，可以在启动容器时使用`--network none`标记。  
+
+```shell
+docker run --rm -dit --network none --name nginx nginx
+# 在docker宿主机无法Nginx，只能在容器内才能访问Nginx
+```
+
+总结：
+
+当需要多个容器在同一个 Docker 主机上进行通信时，**用户定义的桥接网络**是最佳选择。
+
+当不需要隔离网络堆栈与Docekr主机，而需要隔离容器的其他方面时，**主机网络**是最佳选择。
+
+当需要在不同Docekr主机上运行的容器进行通信时，或者当多个应用程序使用swarm服务协同工作时，**覆盖网络**是最佳选择
+
+## 5、docker容器内命令安装问题
+
+```shell
+#更新apt依赖
+apt update
+
+#安装ipaddr
+apt install -y iproute2
+
+#安装ifconfig
+apt install -y net-tools
+
+#安装ping
+apt install -y iputils-ping
+```
+
+
 
 # 六、附录
 
@@ -748,6 +939,21 @@ MySQL 也不是完全不能容器化。
 3）数据库利用中间件和容器化系统能够自动伸缩、容灾、切换、自带多个节点，也是可以进行容器化的。
 
 # 八、Swarm集群
+
+```
+docker swarm init --advertise-addr=192.168.137.12
+docker swarm leave --force
+docker swarm join-token worker
+docker swarm join-token manager
+docker node ls
+docker service ls
+docker service create --name my_web nginxdocker 
+service scale my_web=3docker 
+service create --name my_web --replicas 3 --publish published=8080,target=80 nginx
+docker service rm my_web
+```
+
+
 
 
 

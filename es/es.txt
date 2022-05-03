@@ -1,0 +1,280 @@
+字段需要打开fielddata，才能进行Terms Aggregation:
+1.Keyword默认支持doc_values
+2.Text需要在Mapping中enable。会按照分词后的结果进行分
+
+优化Terms的聚合的性能
+
+PUT index
+{ 
+  "mappings":{
+     "properties":{
+        "foo": {
+           "type":"keyword",
+           "eager_global_ordinals":true
+        }
+    } 
+  }
+}
+
+聚合的作用范围
+
+1.默认的聚合范围是query的查询结果集
+2.同时还支持以下方式改变聚合的作用范围
+(1)Filter
+(2)Post Filter
+(3)Global
+
+
+
+聚合分析的原理及精准度问题
+Term 聚合不准问题优化：
+Term聚合分析不准的原因，数据分散在多个分片上，
+Coordinating Node 无法获取数据全貌。
+解决方案1：当数据量不大时，设置Primary Shard为1；实现准确
+性。
+解决方案2:在分布式数据上，设置shard_size参数，提高精确度。
+原理：每次从shard上额外多获取数据，提示准确率。
+{
+   "size":0,
+   "aggs": {
+        "gender":{
+            "terms":{
+               "field":"someKeyword",
+               "size":3,
+               "shard_size":4,
+               "show_term_doc_count_error":true
+
+           }
+         }   
+
+   }
+注意：打开show_term_doc_count_error参数可以查看聚合的结果是否正确。
+
+
+第七章 数据建模
+1.对象及Nested对象
+ES一般采用以下四种方法处理关联关系：
+对象类型
+嵌套对象
+父子关联关系
+应用端关联
+
+对数组对象进行查询时，容易出现可以偏差，可以引入Nested对象。
+
+
+2.嵌套对象和父子对象
+                 Nested Object                          Parent / Child
+优点            文档存储在一起，读取性能高              父子文档可以独立更新
+缺点            更新嵌套的子文档时，需要更新整个文档    需要额外的内存维护关系。读取性能相对较差。
+适用的场景      子文档偶尔更新，以查询为主              子文档频繁更新
+
+
+3.重建索引
+一般以下几种情况时，我们需要重建索引：
+(1)索引的Mapping发生变更：字段类型更改，分词器及字典更新
+(2)索引的Setting发生变更：索引的主分片数发生改变
+(3)集群内，集群间需要做数据迁移
+
+ES的内置提供的API：
+(1)Update By Query:在现有索引上重建
+(2)Reindex:在其他索引上重建索引
+POST _reindex
+{
+   "source":{
+       "index":"blogs"
+   },
+   "dest":{
+       "index":"blogs_fix"
+   }
+}
+
+
+OP Type
+POST _reindex
+{
+   "source":{
+       "index":"blogs"
+   },
+   "dest":{
+       "index":"blogs_fix",
+       "op_type":"create"
+   }
+}
+* _reindex只会创建不存在的文档
+* 文档如果已经存在，会导致版本冲突
+* 如果发生冲突，想让程序进行执行，则需要将conflicts设置为proceed，默认值为abort
+
+
+跨集群Reindex
+POST _reindex
+{
+   "source":{
+       "remote":{
+           "host":"http://otherhost:9200"
+       },
+       "index":"source",
+       "size":100,
+       "query": {
+           "match": {
+              "test":"data"
+            }   
+        }     
+   },
+   "dest":{
+       "index":"blogs_fix"
+   }
+}
+* reindex.remote.whitelist:"otherhost:9200,another:9200"
+* 需要修改elasticsearch.yml,并重启节点
+
+
+reindex 使用注意两点：
+(1)必须要求_source字段是enabled
+(2)必须提前定义好目标文件的Mapping文件
+
+
+
+4.Ingest Pipeline 和 Painless script
+(1)Ingest Node 数据预处理节点（默认）和logstash功能一样
+(2)Painless script
+*对文档字段进行加工处理
+** 更新或删除字段，处理数据聚合操作
+** Script Field:对返回的字段提前进行计算
+** Function Score：对文档的算分进行处理
+* 在Ingest Pipeline中执行脚本
+* 在Reindex API,Update By Query 时，对数据进行处理 
+
+
+通过Painless 脚本访问字段
+上下文                      语法
+Ingestion                   ctx.field_name 
+Update                      ctx._source.field_name
+Search & Aggregation        doc["field_name"]
+
+5.数据建模：功能需求+性能需求
+功能需求：实体属性、实体之间的关系、搜索相关的配置
+性能需求：索引模板：分片数量
+          索引Mapping：字段配置、关系处理
+
+
+如何对字段进行建模：
+字段类型->是否要搜索及分词->是否聚合及排序->是否要额外的存储
+
+
+枚举类型：设置为keyword。即便是数字，也应该设置成keyword，获取更好的性能。
+
+
+检索：如不需要检索，排序和聚合分析，Enable设置成false。
+聚合及排序：
+* 如不需要排序或聚合分析功能，Doc_values/fielddata设置为false.
+** 过多的字段不容易维护
+** Mapping信息保存在Cluster State中数据量过大，对集群的性能有影响。
+** 删除或者修改数据需要reindex
+
+*默认最大字段数是1000
+
+* 更新频繁，聚合查询频繁的keyword类型的字段，推荐将eager_global_ordinals设置为true。
+
+
+
+建模建议：
+* 一个文档中，最好避免大量的字段
+产生成百上千字段的原因：很多情况是在生产环境下Dynamic 被打开了。
+
+* Dynamic
+** true -未知字段会被自动加入
+** false -新字段不会被索引，但是会保存在_scource
+** strict -新增字段不会被索引，文档写入失败
+
+* Strict
+** 可以控制到字段级别
+
+*避免空值引起的聚合不准
+在mapping中设置null值的默认值:"null_value":1.0 
+
+
+*为索引的Mapping加入Meta信息
+** Mapping设置非常重要，需要从两个维度考虑：
+功能：搜索、聚合、排序
+性能：存储的开销，内存的开销，搜索的性能
+** Mapping设置是一个迭代的过程
+加入新的字段很容易（必要时需要update_by_query）
+更新删除字段不允许（需要reindex重建数据）
+最好能对Mapping加入Meta信息，更好的进行版本管理
+可以考虑将Mapping文件上传git进行管理
+
+
+
+
+
+
+集群身份认证和用户鉴权 
+* 错误的配置信息导致公网可以访问ES集群
+** 在elasticsearch.yml文件中，server.host被错误的配置为0.0.0.0
+
+
+Mapping 设置的相关优化
+1.Enabled: 设置为false，仅做存储，不支持搜索和聚合（数据保存在_source中）
+2.Index: 是否支持倒排索引。设置为false，无法被搜索，但是还是支持aggregation,并出现在_source中
+3.Norms: 如果字段用来过滤和聚合分析，可以关闭，节省存储
+4.Doc_values：是否启用Doc_values，用于排序和聚合分析
+5.Field_data：如果要对text类型启用排序和聚合分析，fielddata设置为true
+6.Store：默认不存储，数据默认存储在_source
+7.Coerce：默认开启，是否开启数据类型的自动转换（例如，字符转数字）
+8.Multifields：多字段特性
+9.Dynamic：true/false/strict 控制Mapping的自动更新
+
+
+
+
+
+常见的集群部署方式：
+
+不同角色的节点：
+Master eligible / Data / Ingest / Coordinating / Machine Learnling
+
+在开发环境中，一个节点可承担多种角色
+
+在生产环境中：
+1.根据数据量，如何和查询的吞吐量，选择合适的部署方式
+2.建议设置单一角色的节点(dedicated node)
+
+一个节点在默认的情况下会同时扮演：Master eligible / Data / Ingest 的角色
+单一角色的节点：
+Master 节点： 负责集群状态的管理，可以选择低配置的CPU，RAM和磁盘
+node.master: true
+node.ingest: false
+node.data: false
+从高可用和避免脑裂的角色出发
+(1)一般在生产环境中配置3台master节点
+(2)一个集群只有1台活跃的主节点
+   a.负责分配管理，索引创建，集群管理等工作
+   
+如果和数据节点或Coordinate节点混合部署
+(1)数据节点相对有比较大的内存占用
+(2)Coordinate节点有时候可能会有开销很高的查询，导致OOM
+(3)这些都有可能影响Master节点，导致集群的不稳定   
+
+
+
+ingest 节点：负责数据处理，使用高配置CPU，中等配置的RAM，低配置的磁盘
+node.master: false
+node.ingest: true
+node.data: false
+
+Data 节点：负责数据存储及处理客户端请求，使用高配置的CPU，RAM和磁盘
+node.master: false
+node.ingest: false
+node.data: true
+
+Coordinate 节点
+node.master: false
+node.ingest: false
+node.data: false
+
+
+setting
+
+tranlog
+
+merge

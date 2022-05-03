@@ -1,0 +1,89 @@
+curl -s --user admin:123456 -XGET http://localhost:9200/_cat/nodes
+curl -s --user admin:123456 -XGET http://localhost:9200/_cat/shards
+curl -s --user admin:123456 -XGET http://localhost:9200/_cat/indices
+curl -s --user admin:123456 -XGET http://localhost:9200/_cat/aliases
+curl -s --user admin:123456 -XGET http://localhost:9200/_cat/health
+curl -s --user admin:123456 -XGET http://localhost:9200/_cat/allocation
+curl -s --user admin:123456 -XGET http://localhost:9200/service_logstash/_search
+curl -s --user admin:123456 -XGET http://localhost:9200/_cluster/allocation/explain
+curl -s --user admin:123456 -XGET http://localhost:9200/service_logstash_2022_04-1/_mapping
+curl -s --user admin:123456 -H 'Content-Type: application/x-ndjson' -XPUT http://localhost:9200/service_logstash_2022_04-1
+curl -s --user admin:123456 -H 'Content-Type: application/x-ndjson' -XDELETE http://localhost:9200/service_logstash_2022_04-000012
+curl -s --user admin:123456 -H 'Content-Type: application/x-ndjson' -XPOST http://localhost:9200/_reindex -d '{"source": {"index": "service_logstash"},"dest": {"index": "service_logstash_2022_04-1"}}'
+# 新增索引别名
+curl -s --user admin:123456 -H 'Content-Type: application/x-ndjson' -XPOST http://localhost:9200/_aliases -d '{"actions": [{ "add": { "index": "service_logstash_2022_03-1", "alias": "service_logstash" }}]}'
+# 删除索引别名
+curl -s --user admin:123456 -H 'Content-Type: application/x-ndjson' -XPOST http://localhost:9200/_aliases -d '{"actions": [{"remove": {"index": "process_logstash_2022_04-1","alias": "process_logstash"}}]}'
+# 查询某个文档的字段不存在或者字段值为空
+curl -s --user admin:123456 -XGET "http://localhost:9200/process_logstash_2022_04-1/_search" -H 'Content-Type: application/json' -d '{"query": {"bool": {"must_not": {"exists": {"field": "source"}}}}}'
+# 修改文档的部分属性
+curl -s --user admin:123456 -XPOST "http://localhost:9200/process_logstash_2022_04-1/_doc/DuwpKIABlSjztPNTuh1D/_update" -H 'Content-Type: application/json' -d '{"doc":{"source" : null}}'
+# 查询时删除某个字段不存在后者为值为null的文档
+curl -s --user admin:123456 -XPOST "http://localhost:9200/process_logstash_2022_04-1/_delete_by_query" -H 'Content-Type: application/json' -d '{"query": {"bool": {"must_not": {"exists": {"field": "source"}}}}}'
+# es命令行新增超级用户admin,密码123456,角色superuser
+./elasticsearch-users useradd admin -p 123456 -r superuser
+# 初始设置默认用户的密码
+./elasticsearch-setup-passwords interactive
+# 利用超级用户重置默认用户的密码
+curl -s --user admin:123456 -XPUT http://127.0.0.1:9200/_xpack/security/user/elastic/_password -H 'Content-Type: application/json' -d '{"password" : "sangfor@2021"}'
+
+
+
+ES遇到的问题：
+1.分片故障---删除红色索引
+分片没有被分配的原因：
+INDEX_CREATE:创建索引导致。在索引的全部分片分配之前，会有短暂的Red，并不一定代表有问题
+CLUSTER_RECOVER:集群重启阶段，会有这个问题
+INDEX_REOPEN:Open一个之前Close的索引
+DANGLING_INDEX_IMPORTED:一个节点离开集群期间，有索引被删除。这个节点重新返回时，会导致Dangling问题。
+常见问题与解决办法：
+(1)集群变红，需要检查是否有节点离线。如果有，通常通过重启离线的节点可以解决问题
+(2)由于配置的问题，需要修复相关的配置，如果是测试的索引，可以直接删除
+(3)因为磁盘空间的限制，分片规则引发的，需要调整规则或者增加节点
+(4)对于节点返回集群，导致的dangling变红，可直接删除dangling索引
+2.ES运行日志量--过大
+3.集群恢复失败，导致.security7索引丢失,重新新建集群
+4.字段的属性为text,调用可sort或agg操作，导致失败。需要开启fielddata:true;或者将类型改为keyword
+5.ES集群健康状态分析：集群--->节点--->索引
+
+
+提高写入性能的方法
+1.写性能优化的目标：增大写吞吐量，越高越好
+2.客户端:多线程，批量写
+(1)可以通过性能测试，确定最佳文档数
+(2)多线程：需要观察是否有HTTP429返回，实现Retry以及线程数量的自动调节
+3.服务端
+(1)降低IO操作：使用ES自动生成文档ID、一些ES相关的配置，如Refresh Interval 
+(2)降低CPU和存储开销：减少不必要的分词、避免不需要的doc_values、文档的字段尽可能保证相同的顺序、可以提高文档的压缩率
+(3)尽可能做到写入和分片的均衡负载，实现水平拓展
+(4)调整Bulk线程池和队列
+
+4.关闭无用的功能
+(1)只需要聚合不需要搜索，Index设置成false
+PUT index
+{
+  "mapping":{
+     "properties":{
+	    "foo":{
+		    "type":"integer",
+            "index":false			
+		}
+	 }
+  }
+}
+(2)不需要算分，Norms设置成false
+PUT index
+{
+  "mapping":{
+     "properties":{
+	    "foo":{
+		    "type":"text",
+            "norms":false			
+		}
+	 }
+  }
+}
+(3)不要对字符串使用默认的dynamic mapping。字段过多，会对性能产生比较大的影响
+(4)Index_options控制在创建倒排索引时，那些内容会被添加到倒排索引中。优化这些配置，在一定程度可以节约CPU
+(5)关闭_source,减少IO操作，适合指标型数据
+
