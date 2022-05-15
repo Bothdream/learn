@@ -1,0 +1,111 @@
+pipeline {
+    agent any
+    // 定义环境变量的指令
+    environment {
+        //新增环境变环量,指令适用于流水线的所有步骤
+        cc = 'clang'
+    }
+    // 用户输入的参数指令
+    parameters {
+        // 参数的类型
+        string(name: 'Greeting', defaultValue: 'Hello', description: 'How should I greet the world?')
+    }
+    // 阶段集合指令
+    stages {
+        // 阶段指令
+        stage('parameters') {
+            // 步骤指令
+            steps {
+                // 获取用户参数的方式
+                echo "P:${params.Greeting}"
+            }
+        }
+        stage('Code Scan') {
+            // 并行执行的指令
+            parallel {
+                stage('Code Scan1') {
+                    steps {
+                        // 交互却是否执行的指令
+                        input '确认继续执行？'
+                    }
+                }
+                stage('Code Scan2') {
+                    steps {
+                        echo "234"
+                        sh 'pwd'
+                        sh 'free'
+                        sh 'df -h'
+                        // 执行多行shell脚本
+                        sh '''
+                            ls -l
+                            du -ah
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Copy Script') {
+            steps {
+                timestamps {
+                    withCredentials([sshUserPrivateKey(credentialsId: '00009e0b-59f3-4ae0-821a-ba32612c526e', keyFileVariable: 'keyfile', usernameVariable: 'user')]) {
+                        sh 'scp -o StrictHostKeyChecking=no -i ${keyfile} demo.sh ${user}@$IP:/root'
+                    }
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                // 时间戳指令
+                timestamps {
+                    // 执行超时指令
+                    timeout(time: 5, unit: 'SECONDS') {
+                        // 凭证指令
+                        withCredentials([sshUserPrivateKey(credentialsId: '00009e0b-59f3-4ae0-821a-ba32612c526e', keyFileVariable: 'keyfile', usernameVariable: 'user')]) {
+                            sh 'ssh -o StrictHostKeyChecking=no -i ${keyfile} ${user}@$IP "sh demo.sh"'
+                        }
+                    }
+                }
+            }
+        }
+        stage('Deploy1') {
+            environment {
+                DEBUG_FLAGS = '-g'
+            }
+            steps {
+                // groovy 脚本指令，可以编写groovy脚本和其他脚本
+                script {
+                    // 获取环境变量
+                    echo "${env.path}"
+                    echo "${env.cc}"
+                    sh 'printenv'
+                    echo "当前结果：${currentBuild.number}"
+                    // 自定义 groovy脚本和变量
+                    def username = 'Jenkins'
+                    echo 'Hello Mr. ${username}'
+                    echo "I said, Hello Mr. ${username}"
+                }
+            }
+        }
+    }
+    // 处理成功或异常
+    post {
+        // 不管成功失败都会执行
+        always {
+            echo "always"
+        }
+        unstable {
+            echo "unstable"
+        }
+        //成功执行
+        success {
+            echo "success"
+        }
+        //失败执行
+        failure {
+            echo "failure-${currentBuild.result}"
+        }
+        changed {
+            echo "changed"
+        }
+    }
+}
