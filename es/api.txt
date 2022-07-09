@@ -45,6 +45,7 @@ DANGLING_INDEX_IMPORTED:一个节点离开集群期间，有索引被删除。这个节点重新返回时，
 3.集群恢复失败，导致.security7索引丢失,重新新建集群
 4.字段的属性为text,调用可sort或agg操作，导致失败。需要开启fielddata:true;或者将类型改为keyword
 5.ES集群健康状态分析：集群--->节点--->索引
+6.容器化ES时，需要定时删除容器的运行日志，不然磁盘会占满，删除日志(在这个目录/var/lib/docker/containers/<容器ID>下)以后还需要重启容器才能生效。
 
 
 提高写入性能的方法
