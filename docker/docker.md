@@ -50,7 +50,10 @@ docker start/stop/restart  <容器ID>  启动/停止/重启容器
 docker rm -f <容器ID>  强制删除容器
 docker logs -f <容器ID> 查看容器的启动日志
 docker inspect <容器ID> 查看容器的元信息
-eg: docker run -id -p 9000:80  nginx  启动Nginx容器，并将宿主机的9000端口暴露给Nginx的80端口使用
+eg: 
+docker run -id -p 9000:80  nginx  启动Nginx容器，并将宿主机的9000端口暴露给Nginx的80端口使用
+docker run -d -p 127.0.0.1:5001:5000/tcp redis 只允许本机的127.0.0.1访问5001端口，用于安全策略
+
 3.Docker load 命令
 导入docker镜像的命令，常用于从本地压缩包中导入docker镜像。
 docker load -i my-eureka.tar
@@ -941,19 +944,50 @@ MySQL 也不是完全不能容器化。
 # 八、Swarm集群
 
 ```
-docker swarm init --advertise-addr=192.168.137.12
-docker swarm leave --force
-docker swarm join-token worker
-docker swarm join-token manager
-docker node ls
+docker swarm init --advertise-addr=192.168.137.12   # 初始化集群配置信息
+docker swarm leave --force # 强制离开集群
+docker swarm join-token worker # 生成worker节点加入集群的token
+docker swarm join-token manager # 生成manager节点加入集群的token
+docker node ls # 查看集群中所有节点信息
 docker service ls
 docker service create --name my_web nginxdocker 
 service scale my_web=3docker 
 service create --name my_web --replicas 3 --publish published=8080,target=80 nginx
 docker service rm my_web
+
+查看docker集群中节点的实际IP
+docker node ls | awk '{print $1}'
+docker node inspect 5qvwo7uqboojhhwnt9rtqmeb6
+# manager节点
+docker inspect xnxgf8edwjkhqqe6b588rwpxf | jq -r '.[0].ManagerStatus.Addr'
+# work节点
+docker inspect 5qvwo7uqboojhhwnt9rtqmeb6 | jq -r '.[0].Status.Addr'
 ```
 
 
 
 
+
+# **九、实际遇到的问题**
+
+## 1.不删容器生效容器配置信息
+
+需要考虑的条件：
+
+a.宿主机上docker的service服务本身不能重启，影响其他线上容器。
+
+b.该容器A不能删除，因为有数据存在。
+
+方案一：修改容器A配置文件，重启容器A
+			宿主机上默认存放所有容器的配置目录是在/var/lib/docker/containers/目录下，在该目录下有许多个容器ID的目录，每一个ID表示一个容器。因此要找到容器A的配置文件那么需要先查询出容器A的ID号即可。得到容器A的ID号之后再去/var/lib/docker/containers/目录下的对应的容器目录，然后就可以看到容器A的配置文件。
+(1).修改之前一定要停止容器，否则修改完之后又被改回去了
+(2).修改完之后先重启docker服务（而不是重新启动容器，否则你的配置文件就变回之前的了）
+
+方案二：使用docker commit新构镜像
+			docker commit把一个容器的文件改动和配置信息commit到一个新的镜像中，然后用这个新的镜像重启一个容器，这对之前的容器不会有影响。主要是三步骤：
+1、先stop容器A
+2、commit容器A
+　　docker commit old_container  new_image:tag
+3、使用前一步新生成的镜像重新启动一个容器。
+　　docker run --name container_name02 -p 9202:9200 new_image:tag
 
