@@ -991,3 +991,5 @@ b.该容器A不能删除，因为有数据存在。
 3、使用前一步新生成的镜像重新启动一个容器。
 　　docker run --name container_name02 -p 9202:9200 new_image:tag
 
+## 2.docker 内部docker0网段与主机网段冲突
+
